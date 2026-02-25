@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TREND_1H FUTURES</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000000;
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #app {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            padding: 12px 15px;
+            background: #111;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            text-align: center;
+            color: #fff;
+            margin-bottom: 3px;
+        }
+        
+        .header p {
+            font-size: 11px;
+            text-align: center;
+            color: #888;
+        }
+        
+        .controls {
+            padding: 12px 15px;
+            background: #111;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        
+        .symbol-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        select {
+            flex: 1;
+            padding: 10px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            height: 40px;
+        }
+        
+        .settings {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .setting {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .setting label {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        
+        .setting input {
+            padding: 8px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 5px;
+            color: #fff;
+            font-size: 13px;
+            height: 36px;
+        }
+        
+        .btn-update {
+            width: 100%;
+            padding: 12px;
+            background: #0066cc;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            height: 44px;
+        }
+        
+        .btn-update:hover {
+            background: #0055aa;
+        }
+        
+        .chart-wrapper {
+            height: 320px;
+            position: relative;
+            background: #000;
+            flex-shrink: 0;
+            margin: 0;
+        }
+        
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #888;
+            z-index: 1000;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #0066cc;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .info-panel {
+            padding: 12px 15px;
+            background: #111;
+            border-top: 1px solid #333;
+            flex-shrink: 0;
+        }
+        
+        .status {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .status-item {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+        
+        .status-label {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        
+        .status-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .trend-up {
+            color: #00ff00;
+        }
+        
+        .trend-down {
+            color: #ff0000;
+        }
+        
+        .targets-container {
+            margin-bottom: 12px;
+        }
+        
+        .targets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        
+        .target {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 3px solid;
+        }
+        
+        .target.stop {
+            border-left-color: #ff0000;
+        }
+        
+        .target.entry {
+            border-left-color: #0066cc;
+        }
+        
+        .target.profit {
+            border-left-color: #00ff00;
+        }
+        
+        .target-name {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        
+        .target-value {
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 10px;
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 12px;
+            height: 40px;
+        }
+        
+        .btn:hover {
+            background: #444;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        /* Scrollbar styling */
+        .scroll-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .scroll-container::-webkit-scrollbar-track {
+            background: #111;
+        }
+        
+        .scroll-container::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+        
+        .scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="scroll-container">
+            <div class="header">
+                <h1>TREND_1H FUTURES</h1>
+                <p>Professional Trading System</p>
+            </div>
+            
+            <div class="controls">
+                <div class="symbol-row">
+                    <select id="symbol">
+                        <!-- Symbols will be populated by JavaScript -->
+                    </select>
+                    <select id="timeframe">
+                        <option value="1m">1 Min</option>
+                        <option value="5m">5 Min</option>
+                        <option value="15m">15 Min</option>
+                        <option value="30m">30 Min</option>
+                        <option value="1h" selected>1 Hour</option>
+                        <option value="4h">4 Hours</option>
+                    </select>
+                </div>
+                
+                <div class="settings">
+                    <div class="setting">
+                        <label>Trend Length</label>
+                        <input type="number" id="trendLength" value="10" min="5" max="50">
+                    </div>
+                    <div class="setting">
+                        <label>Target Multiplier</label>
+                        <input type="number" id="targetMultiplier" value="0" min="0" max="10">
+                    </div>
+                    <div class="setting">
+                        <label>ATR Period</label>
+                        <input type="number" id="atrPeriod" value="20" min="10" max="50">
+                    </div>
+                </div>
+                
+                <button class="btn-update" id="updateBtn">UPDATE CHART</button>
+            </div>
+            
+            <div class="chart-wrapper">
+                <div id="chart"></div>
+                <div class="loading hidden" id="loading">
+                    <div class="spinner"></div>
+                    <p>Loading chart data...</p>
+                </div>
+            </div>
+            
+            <div class="info-panel">
+                <div class="status">
+                    <div class="status-item">
+                        <div class="status-label">TREND</div>
+                        <div class="status-value" id="trendValue">-</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">PRICE</div>
+                        <div class="status-value" id="priceValue">0.0000</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">ATR</div>
+                        <div class="status-value" id="atrValue">0.0000</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">ENTRY</div>
+                        <div class="status-value" id="entryValue">0.0000</div>
+                    </div>
+                </div>
+                
+                <div class="targets-container">
+                    <div class="targets" id="targetsContainer">
+                        <!-- Targets will be added here -->
+                    </div>
+                </div>
+                
+                <div class="buttons">
+                    <button class="btn" id="resetBtn">
+                        🔄 RESET
+                    </button>
+                    <button class="btn" id="shareBtn">
+                        📤 SHARE
+                    </button>
+                    <button class="btn" id="fullscreenBtn">
+                        📊 FULL
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/lightweight-charts@4.0.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
