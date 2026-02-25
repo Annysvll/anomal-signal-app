@@ -12,14 +12,14 @@ let candleSeries = null;
 let currentData = [];
 let isLoading = false;
 
-// Фиксированные настройки индикатора (были убраны из интерфейса)
+// Фиксированные настройки индикатора
 const FIXED_SETTINGS = {
     trendLength: 34,
     targetMultiplier: 0,
     atrPeriod: 14
 };
 
-// Линии индикатора (TP4 удалён)
+// Линии индикатора (только SL, ENTRY, TP1, TP2, TP3)
 let priceLines = {
     stopLoss: null,
     entry: null,
@@ -59,7 +59,6 @@ async function loadSymbolsFromCSV() {
         if (!response.ok) throw new Error('Failed to load tickers.csv');
         const csvText = await response.text();
         
-        // Парсим CSV (простой split, так как файл без кавычек)
         const lines = csvText.split('\n').filter(line => line.trim() !== '');
         const headers = lines[0].split(',');
         const binanceColIndex = headers.findIndex(h => h.trim() === 'binance_symbol');
@@ -69,24 +68,26 @@ async function loadSymbolsFromCSV() {
         for (let i = 1; i < lines.length; i++) {
             const cols = lines[i].split(',');
             if (cols.length > binanceColIndex) {
-                let sym = cols[binanceColIndex].trim().replace(/^'|'$/g, ''); // убираем возможные кавычки
+                let sym = cols[binanceColIndex].trim().replace(/^'|'$/g, '');
                 if (sym) symbols.push(sym);
             }
         }
 
-        // Удаляем дубликаты и сортируем
         const uniqueSymbols = [...new Set(symbols)].sort();
         return uniqueSymbols;
     } catch (error) {
         console.error('Error loading symbols from CSV:', error);
-        // Запасной вариант на случай ошибки
+        // Запасной список
         return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
     }
 }
 
-// Заполнение select символами
 async function initSymbols() {
     const symbolSelect = document.getElementById('symbol');
+    if (!symbolSelect) {
+        console.error('Symbol select element not found');
+        return;
+    }
     symbolSelect.innerHTML = '';
     
     const symbols = await loadSymbolsFromCSV();
@@ -105,15 +106,16 @@ async function initSymbols() {
 function setupSymbolSearch() {
     const searchInput = document.getElementById('symbolSearch');
     const symbolSelect = document.getElementById('symbol');
-    
+    if (!searchInput || !symbolSelect) {
+        console.error('Search input or symbol select not found');
+        return;
+    }
     searchInput.addEventListener('input', function(e) {
         const filter = e.target.value.toLowerCase();
         const options = symbolSelect.options;
-        
         for (let i = 0; i < options.length; i++) {
             const text = options[i].textContent.toLowerCase();
-            const match = text.includes(filter);
-            options[i].style.display = match ? '' : 'none';
+            options[i].style.display = text.includes(filter) ? '' : 'none';
         }
     });
 }
@@ -122,75 +124,27 @@ function setupSymbolSearch() {
 // ГРАФИК
 // ============================================
 
-// ============================================
-// CHART INITIALIZATION
-// ============================================
-
 function initChart() {
     console.log('Initializing chart...');
-    
     const chartContainer = document.getElementById('chart');
+    if (!chartContainer) {
+        console.error('Chart container not found');
+        return;
+    }
     chartContainer.innerHTML = '';
     
     chart = LightweightCharts.createChart(chartContainer, {
         width: chartContainer.clientWidth,
         height: chartContainer.clientHeight,
-        layout: { 
-            background: { color: '#000000' }, 
-            textColor: '#DDDDDD',
-            fontFamily: 'Monaco, "Courier New", monospace'
-        },
-        grid: { 
-            vertLines: { color: '#222222', visible: true }, 
-            horzLines: { color: '#222222', visible: true } 
-        },
-        crosshair: { 
-            mode: LightweightCharts.CrosshairMode.Normal,
-            vertLine: {
-                width: 1,
-                color: '#333333',
-                style: 2
-            },
-            horzLine: {
-                width: 1,
-                color: '#333333',
-                style: 2
-            }
-        },
-        rightPriceScale: {
-            borderColor: '#333333',
-            scaleMargins: {
-                top: 0.05,
-                bottom: 0.05
-            },
-            minimumWidth: 80,
-            autoScale: true
-        },
-        timeScale: {
-            borderColor: '#333333',
-            timeVisible: true,
-            secondsVisible: false,
-            rightOffset: 5,
-            barSpacing: 6,
-            minBarSpacing: 3,
-            fixLeftEdge: true,
-            fixRightEdge: false,
-            borderVisible: false
-        },
-        handleScroll: { 
-            mouseWheel: true, 
-            pressedMouseMove: true, 
-            horzTouchDrag: true, 
-            vertTouchDrag: true 
-        },
-        handleScale: { 
-            axisPressedMouseMove: true, 
-            mouseWheel: true, 
-            pinch: true 
-        },
+        layout: { background: { color: '#000000' }, textColor: '#DDDDDD' },
+        grid: { vertLines: { color: '#222222' }, horzLines: { color: '#222222' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: '#333333', scaleMargins: { top: 0.05, bottom: 0.05 } },
+        timeScale: { borderColor: '#333333', timeVisible: true, secondsVisible: false },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true },
+        handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true }
     });
     
-    // Свечной график
     candleSeries = chart.addCandlestickSeries({
         upColor: '#26a69a',
         downColor: '#ef5350',
@@ -200,28 +154,24 @@ function initChart() {
         wickDownColor: '#ef5350',
         priceLineVisible: false,
         lastValueVisible: false,
-        priceFormat: {
-            type: 'price',
-            precision: 4,
-            minMove: 0.0001
-        }
+        priceFormat: { type: 'price', precision: 4, minMove: 0.0001 }
     });
     
-    // Сбрасываем линии индикатора
     resetPriceLines();
     
     window.addEventListener('resize', () => {
-        if (chart) {
+        if (chart && chartContainer) {
             chart.applyOptions({
                 width: chartContainer.clientWidth,
                 height: chartContainer.clientHeight,
             });
         }
     });
-    
-    console.log('Chart initialized successfully');
-    return true;
 }
+
+// ============================================
+// ИНДИКАТОР
+// ============================================
 
 function calculatePineIndicator(forceRecalculate = false) {
     if (currentData.length < 30) {
@@ -261,7 +211,6 @@ function calculatePineIndicator(forceRecalculate = false) {
     const symbolChanged = indicator.lastSymbol !== currentSymbol;
     const timeframeChanged = indicator.lastTimeframe !== currentTimeframe;
     
-    // Сброс при смене символа или таймфрейма
     if (symbolChanged || timeframeChanged || forceRecalculate) {
         indicator = {
             trend: 'neutral',
@@ -307,22 +256,18 @@ function calculatePineIndicator(forceRecalculate = false) {
         }
     }
     
-    // Пересчёт целей при смене тренда или отсутствии entry
     if (trendChanged || indicator.entryPrice === 0) {
         const base = trend ? sma_low : sma_high;
         const atr_multiplier = atr_value * (trend ? 1 : -1);
         
         indicator.entryPrice = close;
         indicator.stopLoss = base;
-        // TP1, TP2, TP3 (множители упрощены, можно настроить под свою стратегию)
         indicator.tp1 = close + atr_multiplier * (5 + targetMultiplier);
         indicator.tp2 = close + atr_multiplier * (10 + targetMultiplier * 2);
         indicator.tp3 = close + atr_multiplier * (15 + targetMultiplier * 4);
-        // TP4 удалён
         indicator.hasInitialSignal = true;
     }
     
-    // Проверка стоп-лосса
     if (!indicator.stopLossHit && indicator.stopLoss !== 0) {
         if ((trend && close <= indicator.stopLoss) || (!trend && close >= indicator.stopLoss)) {
             indicator.stopLossHit = true;
@@ -341,7 +286,7 @@ function calculatePineIndicator(forceRecalculate = false) {
 }
 
 // ============================================
-// ОТРИСОВКА ЛИНИЙ (без TP4)
+// ОТРИСОВКА ЛИНИЙ
 // ============================================
 
 function drawIndicatorLines() {
@@ -415,15 +360,11 @@ function resetPriceLines() {
 }
 
 // ============================================
-// DATA LOADING
+// ЗАГРУЗКА ДАННЫХ
 // ============================================
 
 async function loadData() {
-    if (isLoading) {
-        console.log('Already loading, skipping');
-        return;
-    }
-    
+    if (isLoading) return;
     try {
         isLoading = true;
         showLoading();
@@ -431,43 +372,19 @@ async function loadData() {
         const symbol = document.getElementById('symbol').value;
         const timeframe = document.getElementById('timeframe').value;
         
-        console.log(`Loading ${symbol} ${timeframe}...`);
-        
-        // Загружаем данные
         const data = await getChartData(symbol, timeframe);
-        
-        if (!data || data.length === 0) {
-            throw new Error('No data received from API');
-        }
+        if (!data || data.length === 0) throw new Error('No data');
         
         currentData = formatData(data);
+        if (currentData.length < 30) throw new Error('Not enough data');
         
-        // Проверяем данные
-        if (currentData.length < 30) {
-            throw new Error(`Not enough data: ${currentData.length} bars`);
-        }
+        if (!chart) initChart();
         
-        // Инициализируем график если нужно
-        if (!chart) {
-            initChart();
-        }
-        
-        // Обновляем данные на графике
         candleSeries.setData(currentData);
-        
-        // Рассчитываем индикаторы
         calculatePineIndicator();
-        
-        // Рисуем линии
         drawIndicatorLines();
-        
-        // Обновляем UI
         updateUI();
-        
-        // Центрируем график
         autoZoomToLatest();
-        
-        console.log('Data loaded successfully');
         
     } catch (error) {
         console.error('Error loading data:', error);
@@ -480,31 +397,12 @@ async function loadData() {
 
 async function getChartData(symbol, interval) {
     try {
-        // Определяем лимит в зависимости от таймфрейма
-        let limit = 1000;
+        let limit = 100;
         if (interval === '1m' || interval === '5m') limit = 150;
-        if (interval === '15m' || interval === '30m') limit = 100;
-        if (interval === '1h' || interval === '4h') limit = 100;
-        
-        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-        
-        console.log(`Fetching from: ${url}`);
-        
+        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         const response = await fetch(url);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (!data || data.length === 0) {
-            throw new Error('Empty response from API');
-        }
-        
-        console.log(`Received ${data.length} bars`);
-        return data;
-        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
     } catch (error) {
         console.error('API error:', error);
         return null;
@@ -512,59 +410,33 @@ async function getChartData(symbol, interval) {
 }
 
 function formatData(rawData) {
-    return rawData.map(item => {
-        // Проверяем данные
-        const time = item[0] / 1000;
-        const open = parseFloat(item[1]);
-        const high = parseFloat(item[2]);
-        const low = parseFloat(item[3]);
-        const close = parseFloat(item[4]);
-        const volume = parseFloat(item[5]);
-        
-        // Проверяем на корректность
-        if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) {
-            console.warn('Invalid data point:', item);
-            return null;
-        }
-        
-        return {
-            time,
-            open,
-            high,
-            low,
-            close,
-            volume
-        };
-    }).filter(item => item !== null); // Убираем некорректные данные
+    return rawData.map(item => ({
+        time: item[0] / 1000,
+        open: parseFloat(item[1]),
+        high: parseFloat(item[2]),
+        low: parseFloat(item[3]),
+        close: parseFloat(item[4]),
+        volume: parseFloat(item[5])
+    })).filter(item => !isNaN(item.open));
 }
 
 function autoZoomToLatest() {
     if (!chart || currentData.length < 10) return;
-    
     try {
         const visibleBars = 50;
         const lastBarIndex = currentData.length - 1;
         const firstVisibleIndex = Math.max(0, lastBarIndex - visibleBars);
-        
-        const firstTime = currentData[firstVisibleIndex].time;
-        const lastTime = currentData[lastBarIndex].time;
-        
         chart.timeScale().setVisibleRange({
-            from: firstTime,
-            to: lastTime
+            from: currentData[firstVisibleIndex].time,
+            to: currentData[lastBarIndex].time
         });
-        
     } catch (error) {
-        console.warn('Auto zoom error:', error);
-        // Пробуем просто подогнать
-        setTimeout(() => {
-            chart.timeScale().fitContent();
-        }, 100);
+        setTimeout(() => chart.timeScale().fitContent(), 100);
     }
 }
 
 // ============================================
-// UI UPDATES
+// ОБНОВЛЕНИЕ UI
 // ============================================
 
 function updateUI() {
@@ -581,22 +453,29 @@ function updateUI() {
     };
     
     const trendElement = document.getElementById('trendValue');
-    if (indicator.stopLossHit) {
-        trendElement.textContent = 'STOP HIT';
-        trendElement.style.color = '#ff0000';
-    } else {
-        trendElement.textContent = indicator.trend.toUpperCase();
-        trendElement.style.color = indicator.trend === 'up' ? '#00ff00' : '#ff0000';
+    if (trendElement) {
+        if (indicator.stopLossHit) {
+            trendElement.textContent = 'STOP HIT';
+            trendElement.style.color = '#ff0000';
+        } else {
+            trendElement.textContent = indicator.trend.toUpperCase();
+            trendElement.style.color = indicator.trend === 'up' ? '#00ff00' : '#ff0000';
+        }
     }
     
-    document.getElementById('priceValue').textContent = formatPrice(indicator.price);
-    document.getElementById('atrValue').textContent = formatPrice(indicator.atr);
-    document.getElementById('entryValue').textContent = formatPrice(indicator.entryPrice);
+    const priceEl = document.getElementById('priceValue');
+    if (priceEl) priceEl.textContent = formatPrice(indicator.price);
+    
+    const atrEl = document.getElementById('atrValue');
+    if (atrEl) atrEl.textContent = formatPrice(indicator.atr);
+    
+    const entryEl = document.getElementById('entryValue');
+    if (entryEl) entryEl.textContent = formatPrice(indicator.entryPrice);
     
     const container = document.getElementById('targetsContainer');
+    if (!container) return;
     container.innerHTML = '';
     
-    // Только SL, ENTRY, TP1, TP2, TP3
     const targets = [
         { name: 'STOP LOSS', value: indicator.stopLoss, type: 'stop' },
         { name: 'ENTRY', value: indicator.entryPrice, type: 'entry' },
@@ -627,40 +506,7 @@ function updateUI() {
 }
 
 // ============================================
-// UPDATE INDICATOR SETTINGS (ВАЖНАЯ ФУНКЦИЯ)
-// ============================================
-
-function updateIndicatorSettings() {
-    console.log('Updating indicator settings...');
-    
-    if (currentData.length < 20) {
-        console.log('Not enough data to update settings');
-        alert('Недостаточно данных для обновления настроек. Загрузите данные сначала.');
-        return;
-    }
-    
-    // Получаем текущие настройки
-    const length = parseInt(document.getElementById('trendLength').value) || 10;
-    const target = parseInt(document.getElementById('targetMultiplier').value) || 0;
-    const atrPeriod = parseInt(document.getElementById('atrPeriod').value) || 20;
-    
-    console.log('New settings:', { length, target, atrPeriod });
-    
-    // Пересчитываем индикатор с новыми настройками
-    calculatePineIndicator(true); // forceRecalculate = true
-    
-    // Перерисовываем линии
-    drawIndicatorLines();
-    
-    // Обновляем UI
-    updateUI();
-    
-    // Показываем подтверждение
-    alert(`Настройки обновлены!\n\nTrend Length: ${length}\nTarget Multiplier: ${target}\nATR Period: ${atrPeriod}`);
-}
-
-// ============================================
-// TEST DATA (FALLBACK)
+// ТЕСТОВЫЕ ДАННЫЕ
 // ============================================
 
 function loadTestData() {
@@ -700,14 +546,12 @@ function loadTestData() {
     autoZoomToLatest();
 }
 
-
 function generateTestData(symbol, timeframe) {
     const data = [];
     let basePrice = getTestPrice(symbol);
     let price = basePrice;
     let trend = Math.random() > 0.5;
     
-    // Определяем количество баров
     let bars = 100;
     if (timeframe === '1m' || timeframe === '5m') bars = 150;
     
@@ -715,8 +559,7 @@ function generateTestData(symbol, timeframe) {
         const timeOffset = (bars - 1 - i) * getIntervalMs(timeframe);
         const time = Date.now() - timeOffset;
         
-        // Создаем реалистичное движение цены
-        const volatility = basePrice * 0.01; // 1% волатильность
+        const volatility = basePrice * 0.01;
         const randomMove = (Math.random() - 0.5) * 2 * volatility;
         
         const open = price;
@@ -735,7 +578,6 @@ function generateTestData(symbol, timeframe) {
         
         price = close;
     }
-    
     return data;
 }
 
@@ -766,15 +608,17 @@ function getIntervalMs(timeframe) {
 }
 
 // ============================================
-// UTILITY FUNCTIONS
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================
 
 function showLoading() {
-    document.getElementById('loading').classList.remove('hidden');
+    const loading = document.getElementById('loading');
+    if (loading) loading.classList.remove('hidden');
 }
 
 function hideLoading() {
-    document.getElementById('loading').classList.add('hidden');
+    const loading = document.getElementById('loading');
+    if (loading) loading.classList.add('hidden');
 }
 
 function toggleFullscreen() {
@@ -821,7 +665,7 @@ function resetAll() {
 
 function shareSignal() {
     const signal = `
-TREND_1H FUTURES SIGNAL
+ANOMAL SIGNAL
 ════════════════════════
 Symbol: ${document.getElementById('symbol').value}
 Timeframe: ${document.getElementById('timeframe').value}
@@ -846,59 +690,39 @@ Time: ${new Date().toLocaleString()}
 function setupEventListeners() {
     const updateBtn = document.getElementById('updateBtn');
     if (updateBtn) updateBtn.addEventListener('click', loadData);
-    else console.error('❌ updateBtn not found');
+    else console.error('updateBtn not found');
 
     const symbolSelect = document.getElementById('symbol');
     if (symbolSelect) symbolSelect.addEventListener('change', loadData);
-    else console.error('❌ symbol select not found');
+    else console.error('symbol select not found');
 
     const timeframeSelect = document.getElementById('timeframe');
     if (timeframeSelect) timeframeSelect.addEventListener('change', loadData);
-    else console.error('❌ timeframe select not found');
+    else console.error('timeframe select not found');
 
     const resetBtn = document.getElementById('resetBtn');
     if (resetBtn) resetBtn.addEventListener('click', resetAll);
-    else console.error('❌ resetBtn not found');
+    else console.error('resetBtn not found');
 
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.addEventListener('click', shareSignal);
-    else console.error('❌ shareBtn not found');
+    else console.error('shareBtn not found');
 
     const fullscreenBtn = document.getElementById('fullscreenBtn');
     if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleFullscreen);
-    else console.error('❌ fullscreenBtn not found');
+    else console.error('fullscreenBtn not found');
 
-    setupSymbolSearch(); // внутри тоже нужна проверка
+    setupSymbolSearch();
 }
 
-function setupSymbolSearch() {
-    const searchInput = document.getElementById('symbolSearch');
-    const symbolSelect = document.getElementById('symbol');
-    if (!searchInput) {
-        console.error('❌ symbolSearch input not found');
-        return;
-    }
-    if (!symbolSelect) {
-        console.error('❌ symbol select not found for search');
-        return;
-    }
-    searchInput.addEventListener('input', function(e) {
-        const filter = e.target.value.toLowerCase();
-        const options = symbolSelect.options;
-        for (let i = 0; i < options.length; i++) {
-            const text = options[i].textContent.toLowerCase();
-            options[i].style.display = text.includes(filter) ? '' : 'none';
-        }
-    });
-}
 // ============================================
-// MAIN INITIALIZATION
+// ЗАПУСК ПРИЛОЖЕНИЯ
 // ============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('App starting...');
     try {
-        await initSymbols();          // загружаем список из CSV
+        await initSymbols();
         setupEventListeners();
         initChart();
         setTimeout(() => loadData(), 500);
@@ -912,8 +736,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         
     } catch (error) {
-        console.error('Fatal error:', error);
+        console.error('Fatal error during initialization:', error);
         alert(`Ошибка инициализации: ${error.message}`);
     }
 });
-
