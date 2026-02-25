@@ -844,15 +844,52 @@ Time: ${new Date().toLocaleString()}
 // ============================================
 
 function setupEventListeners() {
-    document.getElementById('updateBtn').addEventListener('click', loadData);
-    document.getElementById('symbol').addEventListener('change', loadData);
-    document.getElementById('timeframe').addEventListener('change', loadData);
-    document.getElementById('resetBtn').addEventListener('click', resetAll);
-    document.getElementById('shareBtn').addEventListener('click', shareSignal);
-    document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
-    
-    // Поиск по символам
-    setupSymbolSearch();
+    const updateBtn = document.getElementById('updateBtn');
+    if (updateBtn) updateBtn.addEventListener('click', loadData);
+    else console.error('❌ updateBtn not found');
+
+    const symbolSelect = document.getElementById('symbol');
+    if (symbolSelect) symbolSelect.addEventListener('change', loadData);
+    else console.error('❌ symbol select not found');
+
+    const timeframeSelect = document.getElementById('timeframe');
+    if (timeframeSelect) timeframeSelect.addEventListener('change', loadData);
+    else console.error('❌ timeframe select not found');
+
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) resetBtn.addEventListener('click', resetAll);
+    else console.error('❌ resetBtn not found');
+
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) shareBtn.addEventListener('click', shareSignal);
+    else console.error('❌ shareBtn not found');
+
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleFullscreen);
+    else console.error('❌ fullscreenBtn not found');
+
+    setupSymbolSearch(); // внутри тоже нужна проверка
+}
+
+function setupSymbolSearch() {
+    const searchInput = document.getElementById('symbolSearch');
+    const symbolSelect = document.getElementById('symbol');
+    if (!searchInput) {
+        console.error('❌ symbolSearch input not found');
+        return;
+    }
+    if (!symbolSelect) {
+        console.error('❌ symbol select not found for search');
+        return;
+    }
+    searchInput.addEventListener('input', function(e) {
+        const filter = e.target.value.toLowerCase();
+        const options = symbolSelect.options;
+        for (let i = 0; i < options.length; i++) {
+            const text = options[i].textContent.toLowerCase();
+            options[i].style.display = text.includes(filter) ? '' : 'none';
+        }
+    });
 }
 // ============================================
 // MAIN INITIALIZATION
