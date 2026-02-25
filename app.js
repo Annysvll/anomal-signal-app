@@ -2,28 +2,33 @@
 // INITIALIZATION
 // ============================================
 
-// Telegram WebApp
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-// State variables
+// Состояние
 let chart = null;
 let candleSeries = null;
 let currentData = [];
 let isLoading = false;
 
-// Линии индикатора
+// Фиксированные настройки индикатора (были убраны из интерфейса)
+const FIXED_SETTINGS = {
+    trendLength: 34,
+    targetMultiplier: 0,
+    atrPeriod: 14
+};
+
+// Линии индикатора (TP4 удалён)
 let priceLines = {
     stopLoss: null,
     entry: null,
     tp1: null,
     tp2: null,
-    tp3: null,
-    tp4: null
+    tp3: null
 };
 
-// TradingView Pine Script логика
+// Состояние индикатора
 let indicator = {
     trend: 'neutral',
     atr: 0,
@@ -33,7 +38,6 @@ let indicator = {
     tp1: 0,
     tp2: 0,
     tp3: 0,
-    tp4: 0,
     isBullish: false,
     stopLossHit: false,
     signal_up: false,
@@ -42,28 +46,81 @@ let indicator = {
     lastTimeframe: '',
     sma_high: 0,
     sma_low: 0,
-    hasInitialSignal: false,
-    // Сохраняем последние настройки для сравнения
-    lastSettings: {
-        trendLength: 34,
-        targetMultiplier: 0,
-        atrPeriod: 20
-    }
+    hasInitialSignal: false
 };
 
-// Top 50 Binance Futures монет
-const BINANCE_TOP_50 = [
-    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
-    'MATICUSDT', 'TRXUSDT', 'UNIUSDT', 'TONUSDT', 'ICPUSDT',
-    'SHIBUSDT', 'APTUSDT', 'LTCUSDT', 'BCHUSDT', 'ATOMUSDT',
-    'ETCUSDT', 'FILUSDT', 'NEARUSDT', 'ALGOUSDT', 'XLMUSDT',
-    'OPUSDT', 'VETUSDT', 'ARBUSDT', 'AAVEUSDT', 'GRTUSDT',
-    'EOSUSDT', 'QNTUSDT', 'STXUSDT', 'XTZUSDT', 'SANDUSDT',
-    'AXSUSDT', 'THETAUSDT', 'FTMUSDT', 'EGLDUSDT', 'MANAUSDT',
-    'IMXUSDT', 'GALAUSDT', 'CRVUSDT', 'KAVAUSDT', 'RUNEUSDT',
-    '1INCHUSDT', 'COMPUSDT', 'ZILUSDT', 'IOTAUSDT', 'ENJUSDT'
-];
+// ============================================
+// ЗАГРУЗКА СПИСКА СИМВОЛОВ ИЗ CSV
+// ============================================
+
+async function loadSymbolsFromCSV() {
+    try {
+        const response = await fetch('tickers.csv');
+        if (!response.ok) throw new Error('Failed to load tickers.csv');
+        const csvText = await response.text();
+        
+        // Парсим CSV (простой split, так как файл без кавычек)
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+        const headers = lines[0].split(',');
+        const binanceColIndex = headers.findIndex(h => h.trim() === 'binance_symbol');
+        if (binanceColIndex === -1) throw new Error('Column binance_symbol not found');
+
+        const symbols = [];
+        for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',');
+            if (cols.length > binanceColIndex) {
+                let sym = cols[binanceColIndex].trim().replace(/^'|'$/g, ''); // убираем возможные кавычки
+                if (sym) symbols.push(sym);
+            }
+        }
+
+        // Удаляем дубликаты и сортируем
+        const uniqueSymbols = [...new Set(symbols)].sort();
+        return uniqueSymbols;
+    } catch (error) {
+        console.error('Error loading symbols from CSV:', error);
+        // Запасной вариант на случай ошибки
+        return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
+    }
+}
+
+// Заполнение select символами
+async function initSymbols() {
+    const symbolSelect = document.getElementById('symbol');
+    symbolSelect.innerHTML = '';
+    
+    const symbols = await loadSymbolsFromCSV();
+    symbols.forEach(sym => {
+        const option = document.createElement('option');
+        option.value = sym;
+        option.textContent = sym.replace('USDT', '/USDT');
+        symbolSelect.appendChild(option);
+    });
+}
+
+// ============================================
+// ПОИСК ПО СИМВОЛАМ
+// ============================================
+
+function setupSymbolSearch() {
+    const searchInput = document.getElementById('symbolSearch');
+    const symbolSelect = document.getElementById('symbol');
+    
+    searchInput.addEventListener('input', function(e) {
+        const filter = e.target.value.toLowerCase();
+        const options = symbolSelect.options;
+        
+        for (let i = 0; i < options.length; i++) {
+            const text = options[i].textContent.toLowerCase();
+            const match = text.includes(filter);
+            options[i].style.display = match ? '' : 'none';
+        }
+    });
+}
+
+// ============================================
+// ГРАФИК
+// ============================================
 
 // ============================================
 // CHART INITIALIZATION
@@ -166,97 +223,46 @@ function initChart() {
     return true;
 }
 
-// ============================================
-// TOP 50 MONETS INIT
-// ============================================
-
-function initSymbols() {
-    const symbolSelect = document.getElementById('symbol');
-    symbolSelect.innerHTML = '';
-    
-    BINANCE_TOP_50.forEach(symbol => {
-        const option = document.createElement('option');
-        option.value = symbol;
-        option.textContent = symbol.replace('USDT', '/USDT');
-        symbolSelect.appendChild(option);
-    });
-}
-
-// ============================================
-// PINE SCRIPT LOGIC (С РЕАКЦИЕЙ НА НАСТРОЙКИ)
-// ============================================
-
 function calculatePineIndicator(forceRecalculate = false) {
     if (currentData.length < 30) {
         console.log('Not enough data for indicator calculation');
         return;
     }
     
-    const length = parseInt(document.getElementById('trendLength').value) || 10;
-    const target = parseInt(document.getElementById('targetMultiplier').value) || 0;
-    const atrPeriod = parseInt(document.getElementById('atrPeriod').value) || 20;
-    
-    // Проверяем, изменились ли настройки
-    const settingsChanged = 
-        length !== indicator.lastSettings.trendLength ||
-        target !== indicator.lastSettings.targetMultiplier ||
-        atrPeriod !== indicator.lastSettings.atrPeriod;
-    
-    console.log('Calculating indicator with:', { 
-        length, 
-        target, 
-        atrPeriod,
-        settingsChanged,
-        forceRecalculate
-    });
+    const { trendLength, targetMultiplier, atrPeriod } = FIXED_SETTINGS;
     
     // Calculate ATR
     let atrSum = 0;
-    
     for (let i = 1; i < Math.min(currentData.length, atrPeriod + 1); i++) {
         const high = currentData[i].high;
         const low = currentData[i].low;
         const prevClose = currentData[i-1].close;
-        
-        const tr = Math.max(
-            high - low,
-            Math.abs(high - prevClose),
-            Math.abs(low - prevClose)
-        );
-        
+        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
         atrSum += tr;
     }
-    
     const atr_value = (atrSum / Math.min(atrPeriod, currentData.length - 1)) * 0.3;
     
     // Calculate SMA
     let smaHighSum = 0;
     let smaLowSum = 0;
-    
-    const startIdx = Math.max(0, currentData.length - length);
+    const startIdx = Math.max(0, currentData.length - trendLength);
     for (let i = startIdx; i < currentData.length; i++) {
         smaHighSum += currentData[i].high;
         smaLowSum += currentData[i].low;
     }
-    
     const smaCount = currentData.length - startIdx;
     const sma_high = (smaHighSum / smaCount) + atr_value;
     const sma_low = (smaLowSum / smaCount) - atr_value;
     
     const close = currentData[currentData.length - 1].close;
-    const prevClose = currentData.length > 1 ? currentData[currentData.length - 2].close : close;
     
-    console.log('Calculated:', { sma_high, sma_low, close, prevClose, atr_value });
-    
-    // Проверяем смену символа или таймфрейма
     const currentSymbol = document.getElementById('symbol').value;
     const currentTimeframe = document.getElementById('timeframe').value;
     const symbolChanged = indicator.lastSymbol !== currentSymbol;
     const timeframeChanged = indicator.lastTimeframe !== currentTimeframe;
     
+    // Сброс при смене символа или таймфрейма
     if (symbolChanged || timeframeChanged || forceRecalculate) {
-        console.log('Symbol/timeframe changed or force recalculate, resetting indicator');
-        // Полный сброс при смене
         indicator = {
             trend: 'neutral',
             atr: 0,
@@ -266,7 +272,6 @@ function calculatePineIndicator(forceRecalculate = false) {
             tp1: 0,
             tp2: 0,
             tp3: 0,
-            tp4: 0,
             isBullish: false,
             stopLossHit: false,
             signal_up: false,
@@ -275,19 +280,11 @@ function calculatePineIndicator(forceRecalculate = false) {
             lastTimeframe: currentTimeframe,
             sma_high: 0,
             sma_low: 0,
-            hasInitialSignal: false,
-            lastSettings: {
-                trendLength: length,
-                targetMultiplier: target,
-                atrPeriod: atrPeriod
-            }
+            hasInitialSignal: false
         };
-        
-        // Сбрасываем линии
         resetPriceLines();
     }
     
-    // Сохраняем текущие SMA
     indicator.sma_high = sma_high;
     indicator.sma_low = sma_low;
     
@@ -296,66 +293,42 @@ function calculatePineIndicator(forceRecalculate = false) {
     let signal_down = false;
     let trendChanged = false;
     
-    // ПРОСТАЯ И НАДЕЖНАЯ ЛОГИКА СИГНАЛОВ
-    // Если цена выше SMA HIGH - бычий тренд
-    // Если цена ниже SMA LOW - медвежий тренд
-    
     if (close > sma_high) {
-        if (!indicator.hasInitialSignal || !trend || settingsChanged) {
+        if (!indicator.hasInitialSignal || !trend) {
             trend = true;
             signal_up = true;
             trendChanged = true;
-            console.log('UP trend signal');
         }
     } else if (close < sma_low) {
-        if (!indicator.hasInitialSignal || trend || settingsChanged) {
+        if (!indicator.hasInitialSignal || trend) {
             trend = false;
             signal_down = true;
             trendChanged = true;
-            console.log('DOWN trend signal');
         }
     }
     
-    // Пересчитываем цели при:
-    // 1. Смене тренда
-    // 2. Если целей еще нет
-    // 3. Если изменились настройки (важно!)
-    if (trendChanged || indicator.entryPrice === 0 || settingsChanged) {
-        console.log('Calculating new targets (reason:', {
-            trendChanged,
-            noEntry: indicator.entryPrice === 0,
-            settingsChanged
-        }, ')');
-        
+    // Пересчёт целей при смене тренда или отсутствии entry
+    if (trendChanged || indicator.entryPrice === 0) {
         const base = trend ? sma_low : sma_high;
         const atr_multiplier = atr_value * (trend ? 1 : -1);
         
         indicator.entryPrice = close;
         indicator.stopLoss = base;
-        indicator.tp1 = close + atr_multiplier * (5 + target);
-        indicator.tp2 = close + atr_multiplier * (10 + target * 2);
-        indicator.tp3 = close + atr_multiplier * (15 + target * 4);
-        indicator.tp4 = close + atr_multiplier * (20 + target * 6);
+        // TP1, TP2, TP3 (множители упрощены, можно настроить под свою стратегию)
+        indicator.tp1 = close + atr_multiplier * (5 + targetMultiplier);
+        indicator.tp2 = close + atr_multiplier * (10 + targetMultiplier * 2);
+        indicator.tp3 = close + atr_multiplier * (15 + targetMultiplier * 4);
+        // TP4 удалён
         indicator.hasInitialSignal = true;
-        
-        console.log('New targets calculated:', {
-            entry: indicator.entryPrice,
-            stop: indicator.stopLoss,
-            tp1: indicator.tp1,
-            tp2: indicator.tp2
-        });
     }
     
-    // Проверка стоп лосса
+    // Проверка стоп-лосса
     if (!indicator.stopLossHit && indicator.stopLoss !== 0) {
-        if ((trend && close <= indicator.stopLoss) || 
-            (!trend && close >= indicator.stopLoss)) {
+        if ((trend && close <= indicator.stopLoss) || (!trend && close >= indicator.stopLoss)) {
             indicator.stopLossHit = true;
-            console.log('STOP LOSS HIT!');
         }
     }
     
-    // Обновляем индикатор
     indicator.trend = trend ? 'up' : 'down';
     indicator.atr = atr_value;
     indicator.price = close;
@@ -363,40 +336,24 @@ function calculatePineIndicator(forceRecalculate = false) {
     indicator.signal_up = signal_up;
     indicator.signal_down = signal_down;
     
-    // Сохраняем последние настройки
     indicator.lastSymbol = currentSymbol;
     indicator.lastTimeframe = currentTimeframe;
-    indicator.lastSettings = {
-        trendLength: length,
-        targetMultiplier: target,
-        atrPeriod: atrPeriod
-    };
 }
 
 // ============================================
-// DRAW INDICATOR LINES
+// ОТРИСОВКА ЛИНИЙ (без TP4)
 // ============================================
 
 function drawIndicatorLines() {
-    if (!chart || !candleSeries) {
-        console.log('Chart or candle series not available');
-        return;
-    }
+    if (!chart || !candleSeries) return;
     
-    console.log('Drawing indicator lines...');
-    
-    // Удаляем старые линии
     resetPriceLines();
     
-    if (indicator.entryPrice === 0 || isNaN(indicator.entryPrice)) {
-        console.log('No entry price available, skipping line drawing');
-        return;
-    }
+    if (indicator.entryPrice === 0 || isNaN(indicator.entryPrice)) return;
     
     const color = indicator.stopLossHit ? '#ff0000' : null;
     
     try {
-        // STOP LOSS
         priceLines.stopLoss = candleSeries.createPriceLine({
             price: indicator.stopLoss,
             color: color || '#ff0000',
@@ -406,7 +363,6 @@ function drawIndicatorLines() {
             title: 'SL'
         });
         
-        // ENTRY
         priceLines.entry = candleSeries.createPriceLine({
             price: indicator.entryPrice,
             color: color || '#0066cc',
@@ -416,7 +372,6 @@ function drawIndicatorLines() {
             title: 'ENTRY'
         });
         
-        // TAKE PROFITS
         priceLines.tp1 = candleSeries.createPriceLine({
             price: indicator.tp1,
             color: color || '#00ff00',
@@ -444,17 +399,6 @@ function drawIndicatorLines() {
             title: 'TP3'
         });
         
-        priceLines.tp4 = candleSeries.createPriceLine({
-            price: indicator.tp4,
-            color: color || '#00ff00',
-            lineWidth: 1,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: 'TP4'
-        });
-        
-        console.log('Lines drawn successfully');
-        
     } catch (error) {
         console.error('Error drawing lines:', error);
     }
@@ -462,25 +406,12 @@ function drawIndicatorLines() {
 
 function resetPriceLines() {
     if (!candleSeries) return;
-    
     Object.values(priceLines).forEach(line => {
         if (line) {
-            try {
-                candleSeries.removePriceLine(line);
-            } catch (e) {
-                console.log('Error removing price line:', e);
-            }
+            try { candleSeries.removePriceLine(line); } catch (e) {}
         }
     });
-    
-    priceLines = {
-        stopLoss: null,
-        entry: null,
-        tp1: null,
-        tp2: null,
-        tp3: null,
-        tp4: null
-    };
+    priceLines = { stopLoss: null, entry: null, tp1: null, tp2: null, tp3: null };
 }
 
 // ============================================
@@ -550,12 +481,12 @@ async function loadData() {
 async function getChartData(symbol, interval) {
     try {
         // Определяем лимит в зависимости от таймфрейма
-        let limit = 100;
+        let limit = 1000;
         if (interval === '1m' || interval === '5m') limit = 150;
         if (interval === '15m' || interval === '30m') limit = 100;
         if (interval === '1h' || interval === '4h') limit = 100;
         
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         
         console.log(`Fetching from: ${url}`);
         
@@ -637,11 +568,8 @@ function autoZoomToLatest() {
 // ============================================
 
 function updateUI() {
-    // Форматируем цены до 4 знаков после запятой
     const formatPrice = (price) => {
         if (!price || isNaN(price)) return '0.0000';
-        
-        // Всегда показываем минимум 2, максимум 4 знака после запятой
         if (price >= 1000) return price.toFixed(2);
         if (price >= 100) return price.toFixed(2);
         if (price >= 10) return price.toFixed(3);
@@ -652,7 +580,6 @@ function updateUI() {
         return price.toFixed(8);
     };
     
-    // Update trend
     const trendElement = document.getElementById('trendValue');
     if (indicator.stopLossHit) {
         trendElement.textContent = 'STOP HIT';
@@ -662,58 +589,39 @@ function updateUI() {
         trendElement.style.color = indicator.trend === 'up' ? '#00ff00' : '#ff0000';
     }
     
-    // Update values
     document.getElementById('priceValue').textContent = formatPrice(indicator.price);
     document.getElementById('atrValue').textContent = formatPrice(indicator.atr);
     document.getElementById('entryValue').textContent = formatPrice(indicator.entryPrice);
     
-    // Update targets
     const container = document.getElementById('targetsContainer');
     container.innerHTML = '';
     
+    // Только SL, ENTRY, TP1, TP2, TP3
     const targets = [
         { name: 'STOP LOSS', value: indicator.stopLoss, type: 'stop' },
         { name: 'ENTRY', value: indicator.entryPrice, type: 'entry' },
         { name: 'TP1', value: indicator.tp1, type: 'profit' },
         { name: 'TP2', value: indicator.tp2, type: 'profit' },
-        { name: 'TP3', value: indicator.tp3, type: 'profit' },
-        { name: 'TP4', value: indicator.tp4, type: 'profit' }
+        { name: 'TP3', value: indicator.tp3, type: 'profit' }
     ];
     
     targets.forEach(target => {
         if (!target.value || isNaN(target.value)) return;
-        
         const div = document.createElement('div');
         div.className = `target ${target.type}`;
-        
         let borderColor = '#333';
         let textColor = '#fff';
-        
         if (!indicator.stopLossHit) {
-            if (target.type === 'stop') {
-                borderColor = '#ff0000';
-                textColor = '#ff0000';
-            } else if (target.type === 'entry') {
-                borderColor = '#0066cc';
-                textColor = '#0066cc';
-            } else if (target.type === 'profit') {
-                borderColor = '#00ff00';
-                textColor = '#00ff00';
-            }
+            if (target.type === 'stop') { borderColor = '#ff0000'; textColor = '#ff0000'; }
+            else if (target.type === 'entry') { borderColor = '#0066cc'; textColor = '#0066cc'; }
+            else if (target.type === 'profit') { borderColor = '#00ff00'; textColor = '#00ff00'; }
         } else {
             borderColor = '#ff0000';
             textColor = '#ff0000';
         }
-        
         div.style.borderLeftColor = borderColor;
-        
-        div.innerHTML = `
-            <div class="target-name">${target.name}</div>
-            <div class="target-value" style="color: ${textColor}">
-                ${formatPrice(target.value)}
-            </div>
-        `;
-        
+        div.innerHTML = `<div class="target-name">${target.name}</div>
+                         <div class="target-value" style="color: ${textColor}">${formatPrice(target.value)}</div>`;
         container.appendChild(div);
     });
 }
@@ -757,23 +665,15 @@ function updateIndicatorSettings() {
 
 function loadTestData() {
     console.log('Loading test data...');
-    
     const symbol = document.getElementById('symbol').value;
     const timeframe = document.getElementById('timeframe').value;
     
-    // Инициализируем график если нужно
-    if (!chart) {
-        initChart();
-    }
+    if (!chart) initChart();
     
-    // Генерируем тестовые данные
     const data = generateTestData(symbol, timeframe);
     currentData = formatData(data);
-    
-    // Устанавливаем данные
     candleSeries.setData(currentData);
     
-    // Сбрасываем индикатор
     indicator = {
         trend: 'neutral',
         atr: 0,
@@ -783,7 +683,6 @@ function loadTestData() {
         tp1: 0,
         tp2: 0,
         tp3: 0,
-        tp4: 0,
         isBullish: false,
         stopLossHit: false,
         signal_up: false,
@@ -792,28 +691,15 @@ function loadTestData() {
         lastTimeframe: timeframe,
         sma_high: 0,
         sma_low: 0,
-        hasInitialSignal: false,
-        lastSettings: {
-            trendLength: 10,
-            targetMultiplier: 0,
-            atrPeriod: 20
-        }
+        hasInitialSignal: false
     };
     
-    // Рассчитываем индикаторы
-    calculatePineIndicator();
-    
-    // Рисуем линии
+    calculatePineIndicator(true);
     drawIndicatorLines();
-    
-    // Обновляем UI
     updateUI();
-    
-    // Центрируем график
     autoZoomToLatest();
-    
-    console.log('Test data loaded');
 }
+
 
 function generateTestData(symbol, timeframe) {
     const data = [];
@@ -901,11 +787,9 @@ function toggleFullscreen() {
 
 function resetAll() {
     console.log('Resetting indicator...');
-    
     const symbol = document.getElementById('symbol').value;
     const timeframe = document.getElementById('timeframe').value;
     
-    // Полный сброс индикатора
     indicator = {
         trend: 'neutral',
         atr: 0,
@@ -915,7 +799,6 @@ function resetAll() {
         tp1: 0,
         tp2: 0,
         tp3: 0,
-        tp4: 0,
         isBullish: false,
         stopLossHit: false,
         signal_up: false,
@@ -924,24 +807,15 @@ function resetAll() {
         lastTimeframe: timeframe,
         sma_high: 0,
         sma_low: 0,
-        hasInitialSignal: false,
-        lastSettings: {
-            trendLength: 10,
-            targetMultiplier: 0,
-            atrPeriod: 20
-        }
+        hasInitialSignal: false
     };
     
-    // Сбрасываем линии
     resetPriceLines();
-    
-    // Пересчитываем с текущими данными
     if (currentData.length > 0) {
         calculatePineIndicator(true);
         drawIndicatorLines();
         updateUI();
     }
-    
     alert('Индикатор сброшен!');
 }
 
@@ -958,117 +832,50 @@ Stop Loss: ${indicator.stopLoss.toFixed(4)}
 TP1: ${indicator.tp1.toFixed(4)}
 TP2: ${indicator.tp2.toFixed(4)}
 TP3: ${indicator.tp3.toFixed(4)}
-TP4: ${indicator.tp4.toFixed(4)}
 ════════════════════════
 Time: ${new Date().toLocaleString()}
     `;
-    
     tg.sendData(JSON.stringify({ signal }));
     tg.showAlert('Signal shared!');
 }
 
 // ============================================
-// EVENT HANDLERS (С ИСПРАВЛЕННОЙ РЕАКЦИЕЙ НА НАСТРОЙКИ)
+// ОБРАБОТЧИКИ СОБЫТИЙ
 // ============================================
 
 function setupEventListeners() {
-    // Кнопка обновления
     document.getElementById('updateBtn').addEventListener('click', loadData);
-    
-    // Смена символа
     document.getElementById('symbol').addEventListener('change', loadData);
-    
-    // Смена таймфрейма
     document.getElementById('timeframe').addEventListener('change', loadData);
-    
-    // Изменение настроек индикатора - ТЕПЕРЬ РЕАГИРУЕТ!
-    ['trendLength', 'targetMultiplier', 'atrPeriod'].forEach(id => {
-        const element = document.getElementById(id);
-        
-        // Добавляем обработчик для изменения (отпускание клавиши/мыши)
-        element.addEventListener('change', function() {
-            console.log(`Setting changed via change event: ${id} = ${this.value}`);
-            updateIndicatorSettings();
-        });
-        
-        // Также реагируем на input (при вводе с клавиатуры)
-        element.addEventListener('input', function() {
-            console.log(`Setting input: ${id} = ${this.value}`);
-            // Можно добавить debounce если нужно
-        });
-        
-        // Добавляем кнопку Enter для быстрого применения
-        element.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                console.log(`Enter pressed for: ${id}`);
-                updateIndicatorSettings();
-            }
-        });
-    });
-    
-    // Кнопка сброса
     document.getElementById('resetBtn').addEventListener('click', resetAll);
-    
-    // Кнопка шаринга
     document.getElementById('shareBtn').addEventListener('click', shareSignal);
-    
-    // Кнопка полноэкранного режима
     document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
     
-    // Добавляем отдельную кнопку для применения настроек
-    const applySettingsBtn = document.createElement('button');
-    applySettingsBtn.className = 'btn';
-    applySettingsBtn.innerHTML = '⚙️ APPLY';
-    applySettingsBtn.style.marginTop = '10px';
-    applySettingsBtn.addEventListener('click', updateIndicatorSettings);
-    
-    // Вставляем кнопку после настроек
-    const controlsDiv = document.querySelector('.controls');
-    controlsDiv.appendChild(applySettingsBtn);
+    // Поиск по символам
+    setupSymbolSearch();
 }
-
 // ============================================
 // MAIN INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('App starting...');
-    
     try {
-        // Инициализируем список монет
-        initSymbols();
-        
-        // Настройка событий
+        await initSymbols();          // загружаем список из CSV
         setupEventListeners();
-        
-        // Инициализируем график
         initChart();
+        setTimeout(() => loadData(), 500);
         
-        // Загружаем данные через 500мс
-        setTimeout(() => {
-            loadData();
-        }, 500);
-        
-        // Автообновление каждые 30 секунд
         setInterval(() => {
-            if (!document.hidden && !isLoading) {
-                console.log('Auto-refresh...');
-                loadData();
-            }
+            if (!document.hidden && !isLoading) loadData();
         }, 30000);
         
-        // Обновление при возвращении на вкладку
         document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
-                console.log('Tab became visible, refreshing...');
-                setTimeout(() => loadData(), 1000);
-            }
+            if (!document.hidden) setTimeout(() => loadData(), 1000);
         });
         
-        console.log('App started successfully');
-        
     } catch (error) {
-        console.error('Fatal error during initialization:', error);
+        console.error('Fatal error:', error);
         alert(`Ошибка инициализации: ${error.message}`);
     }
 });
