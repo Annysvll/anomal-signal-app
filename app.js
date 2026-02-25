@@ -1,15 +1,25 @@
 // ============================================
 // INITIALIZATION
 // ============================================
-window.pendingSymbol = null
+// ============================================
+// INITIALIZATION
+// ============================================
+
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
-// После tg.ready() и tg.expand()
-const startParam = tg.initDataUnsafe?.start_param;
-if (startParam) {
-    window.pendingSymbol = startParam;  // сохраняем для использования после загрузки списка
+
+// Чтение параметра запуска (startapp) – сохраняем в глобальную переменную
+let pendingSymbol = null;
+try {
+    if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+        pendingSymbol = tg.initDataUnsafe.start_param;
+        console.log('Start param received:', pendingSymbol);
+    }
+} catch (e) {
+    console.warn('Could not read start_param', e);
 }
+
 // Состояние
 let chart = null;
 let candleSeries = null;
@@ -103,18 +113,17 @@ async function initSymbols() {
     });
 
     // Если есть ожидающий символ от startapp
-    if (window.) {
-        const targetSymbol = window.;
-        const optionExists = Array.from(symbolSelect.options).some(opt => opt.value === targetSymbol);
+    if (pendingSymbol) {
+        const optionExists = Array.from(symbolSelect.options).some(opt => opt.value === pendingSymbol);
         if (optionExists) {
-            symbolSelect.value = targetSymbol;
-            // Загружаем данные для выбранного символа
-            loadData();
+            symbolSelect.value = pendingSymbol;
+            // Загружаем данные для выбранного символа (с небольшой задержкой для инициализации графика)
+            setTimeout(() => loadData(), 100);
         } else {
-            console.warn(`Symbol ${targetSymbol} not found in list, using default`);
+            console.warn(`Symbol ${pendingSymbol} not found in list, using default`);
         }
-        // Сбрасываем pendingSymbol
-        window.pendingSymbol = null;
+        // Сбрасываем, чтобы повторно не использовать
+        pendingSymbol = null;
     }
 }
 // ============================================
