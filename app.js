@@ -131,6 +131,8 @@ async function initSymbols() {
             symbolSelect.value = symbolSelect.options[0].value;
         }
     }
+    // Загружаем данные для выбранного символа
+    loadData();
 }
 // ============================================
 // ПОИСК ПО СИМВОЛАМ
@@ -855,9 +857,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initSymbols();          // ждём загрузки символов
         setupEventListeners();
         initChart();
-        // Небольшая задержка для гарантии, что график готов
-        setTimeout(() => loadData(), 100);
-
         setInterval(() => {
             if (!document.hidden && !isLoading) loadData();
         }, 30000);
