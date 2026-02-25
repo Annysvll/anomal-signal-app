@@ -107,26 +107,25 @@ async function initSymbols() {
         symbolSelect.appendChild(option);
     });
 
-    // Если есть ожидающий символ от startapp
+    // Выбираем символ: сначала из параметра, иначе первый в списке
+    let selectedSymbol = null;
     if (pendingSymbol) {
         const optionExists = Array.from(symbolSelect.options).some(opt => opt.value === pendingSymbol);
         if (optionExists) {
-            symbolSelect.value = pendingSymbol;
+            selectedSymbol = pendingSymbol;
             console.log(`Selected symbol from start param: ${pendingSymbol}`);
         } else {
             console.warn(`Symbol ${pendingSymbol} not found in list, using default`);
-            // Можно выбрать первый или оставить как есть
-            if (symbolSelect.options.length > 0) {
-                symbolSelect.value = symbolSelect.options[0].value;
-            }
         }
-        pendingSymbol = null; // сбрасываем
-    } else {
-        // Если нет параметра, выбираем первый символ по умолчанию
-        if (symbolSelect.options.length > 0) {
-            symbolSelect.value = symbolSelect.options[0].value;
-        }
+        pendingSymbol = null;
     }
+    if (!selectedSymbol && symbolSelect.options.length > 0) {
+        selectedSymbol = symbolSelect.options[0].value;
+    }
+    if (selectedSymbol) {
+        symbolSelect.value = selectedSymbol;
+    }
+
     // Загружаем данные для выбранного символа
     loadData();
 }
@@ -280,7 +279,7 @@ function calculatePineIndicator(forceRecalculate = false) {
             atrSum += tr;
         }
         const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
-
+        console.log(`ATR calculated for ${symbol}: ${atr_value}`);
         // SMA
         const length = FIXED_SETTINGS.trendLength;
         let sumHigh = 0, sumLow = 0;
@@ -497,7 +496,7 @@ async function loadData() {
 
     const timeframe = timeframeSelect.value;
 
-    // Проверка: если уже загружали этот же символ/таймфрейм, не грузим повторно
+    // Если уже загружали этот же символ и таймфрейм, не грузим повторно
     if (symbol === lastLoadedSymbol && timeframe === lastLoadedTimeframe && currentData.length > 0) {
         console.log('Already loaded, skipping');
         return;
@@ -523,14 +522,14 @@ async function loadData() {
         updateUI();
         autoZoomToLatest();
 
-        // Запоминаем успешно загруженный символ/таймфрейм
+        // Запоминаем успешно загруженный символ
         lastLoadedSymbol = symbol;
         lastLoadedTimeframe = timeframe;
 
     } catch (error) {
         console.error('Error loading data:', error);
         loadTestData();
-        // При тестовых данных тоже запоминаем (чтобы не перезагружать)
+        // При тестовых данных тоже запоминаем, чтобы не перезагружать
         lastLoadedSymbol = symbol;
         lastLoadedTimeframe = timeframe;
     } finally {
@@ -538,7 +537,6 @@ async function loadData() {
         hideLoading();
     }
 }
-
 async function getChartData(symbol, interval) {
     try {
         let limit = 100;
@@ -871,7 +869,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         initChart();
         setInterval(() => {
             if (!document.hidden && !isLoading) loadData();
-        }, 30000);
+        }, 3600000);
 
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) setTimeout(() => loadData(), 1000);
