@@ -314,7 +314,7 @@ function calculatePineIndicator(forceRecalculate = false) {
 
     // Обновляем последние значения для отображения
     indicator.price = currentData[lastIdx].close;
-    // atr можно взять из предыдущего расчёта, но для простоты оставим как есть
+    indicator.atr = atr
     // (можно пересчитать, но не обязательно)
 }
 // ============================================
