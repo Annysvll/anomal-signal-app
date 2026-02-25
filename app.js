@@ -279,7 +279,8 @@ function calculatePineIndicator(forceRecalculate = false) {
             atrSum += tr;
         }
         const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
-        console.log(`ATR calculated for ${symbol}: ${atr_value}`);
+        console.log(`[DEBUG] ${symbol} ATR calc: atrSum=${atrSum}, divisor=${Math.min(atrPeriod, currentData.length - 1)}, atr_value=${atr}`);
+        console.log(`[DEBUG] first 3 closes:`, currentData.slice(0,3).map(d => d.close));
         // SMA
         const length = FIXED_SETTINGS.trendLength;
         let sumHigh = 0, sumLow = 0;
@@ -316,81 +317,6 @@ function calculatePineIndicator(forceRecalculate = false) {
     // atr можно взять из предыдущего расчёта, но для простоты оставим как есть
     // (можно пересчитать, но не обязательно)
 }
-function calculatePineIndicator(forceRecalculate = false) {
-    if (currentData.length < 35) {
-        console.log('Not enough data for indicator calculation');
-        return;
-    }
-
-    const lastIdx = currentData.length - 1;
-    const prevIdx = lastIdx - 1;
-
-    // Текущие условия на последней свече
-    const curr = getConditionsForIndex(currentData, lastIdx);
-    // Условия на предыдущей свече
-    const prev = getConditionsForIndex(currentData, prevIdx);
-
-    const newBullishSignal = curr.bullish && !prev.bullish;
-    const newBearishSignal = curr.bearish && !prev.bearish;
-
-    // Если новый сигнал или принудительный пересчёт (смена символа/таймфрейма)
-    if (newBullishSignal || newBearishSignal || forceRecalculate || indicator.entryPrice === 0) {
-        console.log('New signal detected:', newBullishSignal ? 'BULLISH' : 'BEARISH');
-
-        // Определяем направление
-        const isBullish = newBullishSignal || (newBearishSignal ? false : indicator.isBullish);
-        const close = currentData[lastIdx].close;
-
-        // Пересчитываем ATR и SMA для последней свечи (используем уже рассчитанные значения из curr, но там нет цен)
-        const lastSlice = currentData.slice(0, lastIdx + 1);
-        // ATR
-        let atrSum = 0;
-        const atrPeriod = FIXED_SETTINGS.atrPeriod;
-        for (let i = 1; i < Math.min(lastSlice.length, atrPeriod + 1); i++) {
-            const tr = Math.max(
-                lastSlice[i].high - lastSlice[i].low,
-                Math.abs(lastSlice[i].high - lastSlice[i - 1].close),
-                Math.abs(lastSlice[i].low - lastSlice[i - 1].close)
-            );
-            atrSum += tr;
-        }
-        const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
-
-        // SMA
-        const length = FIXED_SETTINGS.trendLength;
-        let sumHigh = 0, sumLow = 0;
-        const startIdx = Math.max(0, lastSlice.length - length);
-        for (let i = startIdx; i < lastSlice.length; i++) {
-            sumHigh += lastSlice[i].high;
-            sumLow += lastSlice[i].low;
-        }
-        const count = lastSlice.length - startIdx;
-        const smaHigh = sumHigh / count + atr;
-        const smaLow = sumLow / count - atr;
-
-        // Расчёт уровней
-        indicator.entryPrice = close;
-        if (isBullish) {
-            indicator.stopLoss = smaLow;
-            indicator.tp1 = close + atr * 5;
-            indicator.tp2 = close + atr * 10;
-            indicator.tp3 = close + atr * 15;
-        } else {
-            indicator.stopLoss = smaHigh;
-            indicator.tp1 = close - atr * 5;
-            indicator.tp2 = close - atr * 10;
-            indicator.tp3 = close - atr * 15;
-        }
-
-        indicator.isBullish = isBullish;
-        indicator.trend = isBullish ? 'up' : 'down';
-        indicator.hasInitialSignal = true;
-    }
-
-    // Обновляем последние значения для отображения
-    indicator.price = currentData[lastIdx].close;
-}
-
 // ============================================
 // ОТРИСОВКА ЛИНИЙ
 // ============================================
@@ -473,7 +399,7 @@ let lastLoadedTimeframe = '';
 
 async function loadData() {
     if (isLoading) return;
-
+    console.trace('loadData called');
     const symbolSelect = document.getElementById('symbol');
     const timeframeSelect = document.getElementById('timeframe');
 
@@ -543,6 +469,7 @@ async function getChartData(symbol, interval) {
         if (interval === '1m' || interval === '5m') limit = 150;
         const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         const response = await fetch(url);
+        console.log(`getChartData for ${symbol}: status=${response.status}, data length=${data?.length}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
     } catch (error) {
