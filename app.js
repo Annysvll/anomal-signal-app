@@ -1,10 +1,6 @@
 // ============================================
 // INITIALIZATION
 // ============================================
-// ============================================
-// INITIALIZATION
-// ============================================
-
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
@@ -473,10 +469,15 @@ function resetPriceLines() {
 // ============================================
 // ЗАГРУЗКА ДАННЫХ
 // ============================================
+let lastLoadedSymbol = '';
+let lastLoadedTimeframe = '';
+
 async function loadData() {
     if (isLoading) return;
 
     const symbolSelect = document.getElementById('symbol');
+    const timeframeSelect = document.getElementById('timeframe');
+
     if (!symbolSelect || symbolSelect.options.length === 0) {
         console.log('Symbol select not ready, retrying...');
         setTimeout(loadData, 200);
@@ -485,7 +486,6 @@ async function loadData() {
 
     let symbol = symbolSelect.value;
     if (!symbol) {
-        // Если value пусто (например, первый элемент не выбран), берём первый доступный
         if (symbolSelect.options.length > 0) {
             symbol = symbolSelect.options[0].value;
             symbolSelect.value = symbol;
@@ -495,32 +495,44 @@ async function loadData() {
         }
     }
 
-    const timeframe = document.getElementById('timeframe').value;
+    const timeframe = timeframeSelect.value;
+
+    // Проверка: если уже загружали этот же символ/таймфрейм, не грузим повторно
+    if (symbol === lastLoadedSymbol && timeframe === lastLoadedTimeframe && currentData.length > 0) {
+        console.log('Already loaded, skipping');
+        return;
+    }
+
     console.log(`Loading ${symbol} ${timeframe}...`);
+
     try {
         isLoading = true;
         showLoading();
-        
-        const symbol = document.getElementById('symbol').value;
-        const timeframe = document.getElementById('timeframe').value;
-        
+
         const data = await getChartData(symbol, timeframe);
         if (!data || data.length === 0) throw new Error('No data');
-        
+
         currentData = formatData(data);
         if (currentData.length < 30) throw new Error('Not enough data');
-        
+
         if (!chart) initChart();
-        
+
         candleSeries.setData(currentData);
         calculatePineIndicator();
         drawIndicatorLines();
         updateUI();
         autoZoomToLatest();
-        
+
+        // Запоминаем успешно загруженный символ/таймфрейм
+        lastLoadedSymbol = symbol;
+        lastLoadedTimeframe = timeframe;
+
     } catch (error) {
         console.error('Error loading data:', error);
         loadTestData();
+        // При тестовых данных тоже запоминаем (чтобы не перезагружать)
+        lastLoadedSymbol = symbol;
+        lastLoadedTimeframe = timeframe;
     } finally {
         isLoading = false;
         hideLoading();
@@ -652,6 +664,7 @@ function loadTestData() {
     currentData = formatData(data);
     candleSeries.setData(currentData);
     
+    // Сброс индикатора
     indicator = {
         trend: 'neutral',
         atr: 0,
@@ -677,7 +690,6 @@ function loadTestData() {
     updateUI();
     autoZoomToLatest();
 }
-
 function generateTestData(symbol, timeframe) {
     const data = [];
     let basePrice = getTestPrice(symbol);
