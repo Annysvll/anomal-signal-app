@@ -1,11 +1,15 @@
 // ============================================
 // INITIALIZATION
 // ============================================
-
+window.pendingSymbol = null
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
-
+// После tg.ready() и tg.expand()
+const startParam = tg.initDataUnsafe?.start_param;
+if (startParam) {
+    window.pendingSymbol = startParam;  // сохраняем для использования после загрузки списка
+}
 // Состояние
 let chart = null;
 let candleSeries = null;
@@ -97,8 +101,22 @@ async function initSymbols() {
         option.textContent = sym.replace('USDT', '/USDT');
         symbolSelect.appendChild(option);
     });
-}
 
+    // Если есть ожидающий символ от startapp
+    if (window.) {
+        const targetSymbol = window.;
+        const optionExists = Array.from(symbolSelect.options).some(opt => opt.value === targetSymbol);
+        if (optionExists) {
+            symbolSelect.value = targetSymbol;
+            // Загружаем данные для выбранного символа
+            loadData();
+        } else {
+            console.warn(`Symbol ${targetSymbol} not found in list, using default`);
+        }
+        // Сбрасываем pendingSymbol
+        window.pendingSymbol = null;
+    }
+}
 // ============================================
 // ПОИСК ПО СИМВОЛАМ
 // ============================================
