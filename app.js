@@ -475,11 +475,11 @@ async function getChartData(symbol, interval) {
     try {
         let limit = 100;
         if (interval === '1m' || interval === '5m') limit = 150;
-        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         const response = await fetch(url);
-        console.log(`getChartData for ${symbol}: status=${response.status}, data length=${data?.length}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
+        const data = await response.json();
+        return data;
     } catch (error) {
         console.error('API error:', error);
         return null;
