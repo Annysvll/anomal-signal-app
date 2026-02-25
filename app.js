@@ -172,117 +172,192 @@ function initChart() {
 // ============================================
 // ИНДИКАТОР
 // ============================================
+function getConditionsForIndex(data, idx) {
+    if (idx < 34) return { bullish: false, bearish: false }; // недостаточно данных
 
+    const slice = data.slice(0, idx + 1); // данные до idx включительно
+    const length = FIXED_SETTINGS.trendLength;
+    const atrPeriod = FIXED_SETTINGS.atrPeriod;
+
+    // Расчёт ATR для среза
+    let atrSum = 0;
+    for (let i = 1; i < Math.min(slice.length, atrPeriod + 1); i++) {
+        const tr = Math.max(
+            slice[i].high - slice[i].low,
+            Math.abs(slice[i].high - slice[i - 1].close),
+            Math.abs(slice[i].low - slice[i - 1].close)
+        );
+        atrSum += tr;
+    }
+    const atr = (atrSum / Math.min(atrPeriod, slice.length - 1)) * 0.3;
+
+    // SMA для high и low
+    let sumHigh = 0, sumLow = 0;
+    const startIdx = Math.max(0, slice.length - length);
+    for (let i = startIdx; i < slice.length; i++) {
+        sumHigh += slice[i].high;
+        sumLow += slice[i].low;
+    }
+    const count = slice.length - startIdx;
+    const smaHigh = sumHigh / count + atr;
+    const smaLow = sumLow / count - atr;
+
+    const close = slice[idx].close;
+
+    return {
+        bullish: close > smaHigh,
+        bearish: close < smaLow
+    };
+}
+// ============================================
 function calculatePineIndicator(forceRecalculate = false) {
-    if (currentData.length < 30) {
+    if (currentData.length < 35) {
         console.log('Not enough data for indicator calculation');
         return;
     }
-    
-    const { trendLength, targetMultiplier, atrPeriod } = FIXED_SETTINGS;
-    
-    // Calculate ATR
-    let atrSum = 0;
-    for (let i = 1; i < Math.min(currentData.length, atrPeriod + 1); i++) {
-        const high = currentData[i].high;
-        const low = currentData[i].low;
-        const prevClose = currentData[i-1].close;
-        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
-        atrSum += tr;
-    }
-    const atr_value = (atrSum / Math.min(atrPeriod, currentData.length - 1)) * 0.3;
-    
-    // Calculate SMA
-    let smaHighSum = 0;
-    let smaLowSum = 0;
-    const startIdx = Math.max(0, currentData.length - trendLength);
-    for (let i = startIdx; i < currentData.length; i++) {
-        smaHighSum += currentData[i].high;
-        smaLowSum += currentData[i].low;
-    }
-    const smaCount = currentData.length - startIdx;
-    const sma_high = (smaHighSum / smaCount) + atr_value;
-    const sma_low = (smaLowSum / smaCount) - atr_value;
-    
-    const close = currentData[currentData.length - 1].close;
-    
-    const currentSymbol = document.getElementById('symbol').value;
-    const currentTimeframe = document.getElementById('timeframe').value;
-    const symbolChanged = indicator.lastSymbol !== currentSymbol;
-    const timeframeChanged = indicator.lastTimeframe !== currentTimeframe;
-    
-    if (symbolChanged || timeframeChanged || forceRecalculate) {
-        indicator = {
-            trend: 'neutral',
-            atr: 0,
-            price: 0,
-            entryPrice: 0,
-            stopLoss: 0,
-            tp1: 0,
-            tp2: 0,
-            tp3: 0,
-            isBullish: false,
-            stopLossHit: false,
-            signal_up: false,
-            signal_down: false,
-            lastSymbol: currentSymbol,
-            lastTimeframe: currentTimeframe,
-            sma_high: 0,
-            sma_low: 0,
-            hasInitialSignal: false
-        };
-        resetPriceLines();
-    }
-    
-    indicator.sma_high = sma_high;
-    indicator.sma_low = sma_low;
-    
-    let trend = indicator.isBullish;
-    let signal_up = false;
-    let signal_down = false;
-    let trendChanged = false;
-    
-    if (close > sma_high) {
-        if (!indicator.hasInitialSignal || !trend) {
-            trend = true;
-            signal_up = true;
-            trendChanged = true;
+
+    const lastIdx = currentData.length - 1;
+    const prevIdx = lastIdx - 1;
+
+    // Текущие условия на последней свече
+    const curr = getConditionsForIndex(currentData, lastIdx);
+    // Условия на предыдущей свече
+    const prev = getConditionsForIndex(currentData, prevIdx);
+
+    const newBullishSignal = curr.bullish && !prev.bullish;
+    const newBearishSignal = curr.bearish && !prev.bearish;
+
+    // Если новый сигнал или принудительный пересчёт (смена символа/таймфрейма)
+    if (newBullishSignal || newBearishSignal || forceRecalculate || indicator.entryPrice === 0) {
+        console.log('New signal detected:', newBullishSignal ? 'BULLISH' : 'BEARISH');
+
+        // Определяем направление
+        const isBullish = newBullishSignal || (newBearishSignal ? false : indicator.isBullish);
+        const close = currentData[lastIdx].close;
+
+        // Пересчитываем ATR и SMA для последней свечи (используем уже рассчитанные значения из curr, но там нет цен)
+        const lastSlice = currentData.slice(0, lastIdx + 1);
+        // ATR
+        let atrSum = 0;
+        const atrPeriod = FIXED_SETTINGS.atrPeriod;
+        for (let i = 1; i < Math.min(lastSlice.length, atrPeriod + 1); i++) {
+            const tr = Math.max(
+                lastSlice[i].high - lastSlice[i].low,
+                Math.abs(lastSlice[i].high - lastSlice[i - 1].close),
+                Math.abs(lastSlice[i].low - lastSlice[i - 1].close)
+            );
+            atrSum += tr;
         }
-    } else if (close < sma_low) {
-        if (!indicator.hasInitialSignal || trend) {
-            trend = false;
-            signal_down = true;
-            trendChanged = true;
+        const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
+
+        // SMA
+        const length = FIXED_SETTINGS.trendLength;
+        let sumHigh = 0, sumLow = 0;
+        const startIdx = Math.max(0, lastSlice.length - length);
+        for (let i = startIdx; i < lastSlice.length; i++) {
+            sumHigh += lastSlice[i].high;
+            sumLow += lastSlice[i].low;
         }
-    }
-    
-    if (trendChanged || indicator.entryPrice === 0) {
-        const base = trend ? sma_low : sma_high;
-        const atr_multiplier = atr_value * (trend ? 1 : -1);
-        
+        const count = lastSlice.length - startIdx;
+        const smaHigh = sumHigh / count + atr;
+        const smaLow = sumLow / count - atr;
+
+        // Расчёт уровней
         indicator.entryPrice = close;
-        indicator.stopLoss = base;
-        indicator.tp1 = close + atr_multiplier * (5 + targetMultiplier);
-        indicator.tp2 = close + atr_multiplier * (10 + targetMultiplier * 2);
-        indicator.tp3 = close + atr_multiplier * (15 + targetMultiplier * 4);
+        if (isBullish) {
+            indicator.stopLoss = smaLow;
+            indicator.tp1 = close + atr * 5;
+            indicator.tp2 = close + atr * 10;
+            indicator.tp3 = close + atr * 15;
+        } else {
+            indicator.stopLoss = smaHigh;
+            indicator.tp1 = close - atr * 5;
+            indicator.tp2 = close - atr * 10;
+            indicator.tp3 = close - atr * 15;
+        }
+
+        indicator.isBullish = isBullish;
+        indicator.trend = isBullish ? 'up' : 'down';
         indicator.hasInitialSignal = true;
     }
-    
-    if (!indicator.stopLossHit && indicator.stopLoss !== 0) {
-        if ((trend && close <= indicator.stopLoss) || (!trend && close >= indicator.stopLoss)) {
-            indicator.stopLossHit = true;
-        }
+
+    // Обновляем последние значения для отображения
+    indicator.price = currentData[lastIdx].close;
+    // atr можно взять из предыдущего расчёта, но для простоты оставим как есть
+    // (можно пересчитать, но не обязательно)
+}function calculatePineIndicator(forceRecalculate = false) {
+    if (currentData.length < 35) {
+        console.log('Not enough data for indicator calculation');
+        return;
     }
-    
-    indicator.trend = trend ? 'up' : 'down';
-    indicator.atr = atr_value;
-    indicator.price = close;
-    indicator.isBullish = trend;
-    indicator.signal_up = signal_up;
-    indicator.signal_down = signal_down;
-    
-    indicator.lastSymbol = currentSymbol;
-    indicator.lastTimeframe = currentTimeframe;
+
+    const lastIdx = currentData.length - 1;
+    const prevIdx = lastIdx - 1;
+
+    // Текущие условия на последней свече
+    const curr = getConditionsForIndex(currentData, lastIdx);
+    // Условия на предыдущей свече
+    const prev = getConditionsForIndex(currentData, prevIdx);
+
+    const newBullishSignal = curr.bullish && !prev.bullish;
+    const newBearishSignal = curr.bearish && !prev.bearish;
+
+    // Если новый сигнал или принудительный пересчёт (смена символа/таймфрейма)
+    if (newBullishSignal || newBearishSignal || forceRecalculate || indicator.entryPrice === 0) {
+        console.log('New signal detected:', newBullishSignal ? 'BULLISH' : 'BEARISH');
+
+        // Определяем направление
+        const isBullish = newBullishSignal || (newBearishSignal ? false : indicator.isBullish);
+        const close = currentData[lastIdx].close;
+
+        // Пересчитываем ATR и SMA для последней свечи (используем уже рассчитанные значения из curr, но там нет цен)
+        const lastSlice = currentData.slice(0, lastIdx + 1);
+        // ATR
+        let atrSum = 0;
+        const atrPeriod = FIXED_SETTINGS.atrPeriod;
+        for (let i = 1; i < Math.min(lastSlice.length, atrPeriod + 1); i++) {
+            const tr = Math.max(
+                lastSlice[i].high - lastSlice[i].low,
+                Math.abs(lastSlice[i].high - lastSlice[i - 1].close),
+                Math.abs(lastSlice[i].low - lastSlice[i - 1].close)
+            );
+            atrSum += tr;
+        }
+        const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
+
+        // SMA
+        const length = FIXED_SETTINGS.trendLength;
+        let sumHigh = 0, sumLow = 0;
+        const startIdx = Math.max(0, lastSlice.length - length);
+        for (let i = startIdx; i < lastSlice.length; i++) {
+            sumHigh += lastSlice[i].high;
+            sumLow += lastSlice[i].low;
+        }
+        const count = lastSlice.length - startIdx;
+        const smaHigh = sumHigh / count + atr;
+        const smaLow = sumLow / count - atr;
+
+        // Расчёт уровней
+        indicator.entryPrice = close;
+        if (isBullish) {
+            indicator.stopLoss = smaLow;
+            indicator.tp1 = close + atr * 5;
+            indicator.tp2 = close + atr * 10;
+            indicator.tp3 = close + atr * 15;
+        } else {
+            indicator.stopLoss = smaHigh;
+            indicator.tp1 = close - atr * 5;
+            indicator.tp2 = close - atr * 10;
+            indicator.tp3 = close - atr * 15;
+        }
+
+        indicator.isBullish = isBullish;
+        indicator.trend = isBullish ? 'up' : 'down';
+        indicator.hasInitialSignal = true;
+    }
+
+    // Обновляем последние значения для отображения
+    indicator.price = currentData[lastIdx].close;
 }
 
 // ============================================
