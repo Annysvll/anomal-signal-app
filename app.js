@@ -248,6 +248,7 @@ function calculatePineIndicator(forceRecalculate = false) {
 
     const lastIdx = currentData.length - 1;
     const prevIdx = lastIdx - 1;
+    const symbol = document.getElementById('symbol').value; // для логов
 
     // Текущие условия на последней свече
     const curr = getConditionsForIndex(currentData, lastIdx);
@@ -265,8 +266,13 @@ function calculatePineIndicator(forceRecalculate = false) {
         const isBullish = newBullishSignal || (newBearishSignal ? false : indicator.isBullish);
         const close = currentData[lastIdx].close;
 
-        // Пересчитываем ATR и SMA для последней свечи (используем уже рассчитанные значения из curr, но там нет цен)
+        // Пересчитываем ATR и SMA для последней свечи
         const lastSlice = currentData.slice(0, lastIdx + 1);
+        if (lastSlice.length < FIXED_SETTINGS.atrPeriod + 1) {
+            console.warn('Not enough data for ATR calculation');
+            return;
+        }
+
         // ATR
         let atrSum = 0;
         const atrPeriod = FIXED_SETTINGS.atrPeriod;
@@ -279,8 +285,11 @@ function calculatePineIndicator(forceRecalculate = false) {
             atrSum += tr;
         }
         const atr = (atrSum / Math.min(atrPeriod, lastSlice.length - 1)) * 0.3;
-        console.log(`[DEBUG] ${symbol} ATR calc: atrSum=${atrSum}, divisor=${Math.min(atrPeriod, currentData.length - 1)}, atr_value=${atr}`);
+
+        // Отладочные логи
+        console.log(`[DEBUG] ${symbol} ATR calc: atrSum=${atrSum}, divisor=${Math.min(atrPeriod, lastSlice.length - 1)}, atr=${atr}`);
         console.log(`[DEBUG] first 3 closes:`, currentData.slice(0,3).map(d => d.close));
+
         // SMA
         const length = FIXED_SETTINGS.trendLength;
         let sumHigh = 0, sumLow = 0;
@@ -310,12 +319,11 @@ function calculatePineIndicator(forceRecalculate = false) {
         indicator.isBullish = isBullish;
         indicator.trend = isBullish ? 'up' : 'down';
         indicator.hasInitialSignal = true;
+        indicator.atr = atr; // ← сохраняем для отображения
     }
 
     // Обновляем последние значения для отображения
     indicator.price = currentData[lastIdx].close;
-    indicator.atr = atr
-    // (можно пересчитать, но не обязательно)
 }
 // ============================================
 // ОТРИСОВКА ЛИНИЙ
