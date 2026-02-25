@@ -19,7 +19,6 @@ try {
 } catch (e) {
     console.warn('Could not read start_param', e);
 }
-
 // Состояние
 let chart = null;
 let candleSeries = null;
@@ -103,7 +102,7 @@ async function initSymbols() {
         return;
     }
     symbolSelect.innerHTML = '';
-    
+
     const symbols = await loadSymbolsFromCSV();
     symbols.forEach(sym => {
         const option = document.createElement('option');
@@ -117,13 +116,20 @@ async function initSymbols() {
         const optionExists = Array.from(symbolSelect.options).some(opt => opt.value === pendingSymbol);
         if (optionExists) {
             symbolSelect.value = pendingSymbol;
-            // Загружаем данные для выбранного символа (с небольшой задержкой для инициализации графика)
-            setTimeout(() => loadData(), 100);
+            console.log(`Selected symbol from start param: ${pendingSymbol}`);
         } else {
             console.warn(`Symbol ${pendingSymbol} not found in list, using default`);
+            // Можно выбрать первый или оставить как есть
+            if (symbolSelect.options.length > 0) {
+                symbolSelect.value = symbolSelect.options[0].value;
+            }
         }
-        // Сбрасываем, чтобы повторно не использовать
-        pendingSymbol = null;
+        pendingSymbol = null; // сбрасываем
+    } else {
+        // Если нет параметра, выбираем первый символ по умолчанию
+        if (symbolSelect.options.length > 0) {
+            symbolSelect.value = symbolSelect.options[0].value;
+        }
     }
 }
 // ============================================
@@ -312,7 +318,8 @@ function calculatePineIndicator(forceRecalculate = false) {
     indicator.price = currentData[lastIdx].close;
     // atr можно взять из предыдущего расчёта, но для простоты оставим как есть
     // (можно пересчитать, но не обязательно)
-}function calculatePineIndicator(forceRecalculate = false) {
+}
+function calculatePineIndicator(forceRecalculate = false) {
     if (currentData.length < 35) {
         console.log('Not enough data for indicator calculation');
         return;
@@ -464,9 +471,30 @@ function resetPriceLines() {
 // ============================================
 // ЗАГРУЗКА ДАННЫХ
 // ============================================
-
 async function loadData() {
     if (isLoading) return;
+
+    const symbolSelect = document.getElementById('symbol');
+    if (!symbolSelect || symbolSelect.options.length === 0) {
+        console.log('Symbol select not ready, retrying...');
+        setTimeout(loadData, 200);
+        return;
+    }
+
+    let symbol = symbolSelect.value;
+    if (!symbol) {
+        // Если value пусто (например, первый элемент не выбран), берём первый доступный
+        if (symbolSelect.options.length > 0) {
+            symbol = symbolSelect.options[0].value;
+            symbolSelect.value = symbol;
+        } else {
+            console.error('No symbols available');
+            return;
+        }
+    }
+
+    const timeframe = document.getElementById('timeframe').value;
+    console.log(`Loading ${symbol} ${timeframe}...`);
     try {
         isLoading = true;
         showLoading();
@@ -824,19 +852,20 @@ function setupEventListeners() {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('App starting...');
     try {
-        await initSymbols();
+        await initSymbols();          // ждём загрузки символов
         setupEventListeners();
         initChart();
-        setTimeout(() => loadData(), 500);
-        
+        // Небольшая задержка для гарантии, что график готов
+        setTimeout(() => loadData(), 100);
+
         setInterval(() => {
             if (!document.hidden && !isLoading) loadData();
         }, 30000);
-        
+
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) setTimeout(() => loadData(), 1000);
         });
-        
+
     } catch (error) {
         console.error('Fatal error during initialization:', error);
         alert(`Ошибка инициализации: ${error.message}`);
