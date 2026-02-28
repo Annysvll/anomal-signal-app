@@ -475,7 +475,7 @@ async function getChartData(symbol, interval) {
     try {
         let limit = 100;
         if (interval === '1m' || interval === '5m') limit = 150;
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
