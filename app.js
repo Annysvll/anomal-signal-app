@@ -57,7 +57,21 @@ let indicator = {
     sma_low: 0,
     hasInitialSignal: false
 };
-
+async function checkSubscription() {
+    const userId = tg.initDataUnsafe?.user?.id;
+    if (!userId) {
+        console.warn('No user id');
+        return false; // может, не в Telegram? тогда пропускаем
+    }
+    try {
+        const response = await fetch(`https://your-server.com/check_subscription?user_id=${userId}`);
+        const data = await response.json();
+        return data.active;
+    } catch (error) {
+        console.error('Subscription check failed', error);
+        return false;
+    }
+}
 // ============================================
 // ЗАГРУЗКА СПИСКА СИМВОЛОВ ИЗ CSV
 // ============================================
@@ -126,8 +140,14 @@ async function initSymbols() {
         symbolSelect.value = selectedSymbol;
     }
 
-    // Загружаем данные для выбранного символа
-    loadData();
+// проверка подписки, перед loadData:
+const hasSubscription = await checkSubscription();
+if (!hasSubscription) {
+    tg.showAlert('❌ У вас нет активной подписки. Оформите её в боте: @anomal_signal_bot');
+    // Можно заблокировать дальнейшие действия, например, не вызывать loadData
+    return;
+}
+loadData();
 }
 // ============================================
 // ПОИСК ПО СИМВОЛАМ
