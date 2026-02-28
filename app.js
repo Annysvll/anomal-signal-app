@@ -24,7 +24,7 @@ let isLoading = false;
 // Фиксированные настройки индикатора
 const FIXED_SETTINGS = {
     trendLength: 34,
-    targetMultiplier: 0,
+    targetMultiplier: 1,
     atrPeriod: 14
 };
 
